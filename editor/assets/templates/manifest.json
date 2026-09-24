@@ -1,0 +1,26 @@
+{
+  "400": {
+    "file": "empty-400.map",
+    "sha256": "8d42972e682071c106d699461534a7b4a4eb146d204e6339b4a0546bdad70d3c",
+    "source": "output\\height-tests-2026-09-19\\ref_00_base_400.map",
+    "size": 400,
+    "version": 236,
+    "entity_counts": {
+      "buildings": 0,
+      "vegetation": 0,
+      "units": 0
+    }
+  },
+  "500": {
+    "file": "empty-500.map",
+    "sha256": "cea477bcb5416503aec888badbc44caf71253683998cf4337e401237662b2fa9",
+    "source": "output\\references-2026-09-19\\maps\\ref_00_base_500.map",
+    "size": 500,
+    "version": 236,
+    "entity_counts": {
+      "buildings": 0,
+      "vegetation": 0,
+      "units": 0
+    }
+  }
+}
