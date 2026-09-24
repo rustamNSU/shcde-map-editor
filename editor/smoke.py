@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QPoint, QPointF
 from PySide6.QtTest import QTest
 from . import TemplateLibrary, MapWriter, MapReader, Pattern, PatternLibrary
 from .gui import EditorWindow
+from .services import MATERIALS
 
 
 def self_test(app, directory):
@@ -31,7 +32,7 @@ def self_test(app, directory):
         QTest.keyClick(brush.size.lineEdit(),Qt.Key.Key_Return)
         assert window.canvas.brush_size==250 and brush.slider.value()==250
         brush.size.setValue(5)
-        assert len(window.palette.choices.buttons)==8
+        assert set(window.palette.choices.buttons)==set(MATERIALS)
         window.show_hotkeys()
         app.processEvents()
         window.hotkeys_window.grab().save(str(directory/'hotkeys.png'))
