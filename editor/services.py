@@ -2,6 +2,7 @@
 import struct
 import numpy as np
 from semantics import ENTITY_LAYOUTS, entity_report
+from .geometry import SUPPORTED_MAP_SIZES
 
 MATERIALS = {
     'earth': (0, '#bca775'), 'oasis': (16, '#78a365'),
@@ -9,7 +10,38 @@ MATERIALS = {
     'thick_scrub': (128, '#68794d'), 'earth_stones': (2, '#aa9e86'),
     'stone': (0, '#adb5bd'), 'iron': (0, '#956753'),
     'marsh': (0, '#5c7663'),
+    'sea': (0, '#316b97'), 'river': (0, '#4b91ad'),
+    'ford': (0, '#83b5ba'), 'beach': (32, '#e1ce97'),
+    'pitch': (0, '#514c43'), 'rocks': (0, '#74716b'),
+    'middle_plateau': (4, '#ab936e'), 'high_plateau': (8, '#c5b28d'),
 }
+
+
+TERRAIN_LOGIC_BITS = (1 | 0x80 | 0x2000 | 0x8000 | 0x20000 | 0x80000 |
+                      0x100000 | 0x200000 | 0x20000000 | 0x80000000)
+
+
+def terrain_eligible(document, ids, height=False):
+    """Known terrain only; preserve objects, reserved flags and actual unit records."""
+    d=document;logic=d.grid(3003)[ids]
+    eligible=d.geometry.playable[ids] & ((logic & np.uint32(0xffffffff ^ TERRAIN_LOGIC_BITS))==0)
+    if height:
+        # Native height brushes exclude sea/swamp/moat/structures. Keep water
+        # depth semantics separate from absolute-valued height mask painting.
+        eligible &= (logic & np.uint32(0xa0300001))==0
+        eligible &= d.grid(3005)[ids]==d.grid(3045)[ids]
+    for sid in (3012,3010,3004):eligible &= d.grid(sid)[ids]==0
+    occupied=[u['tile_id'] for u in EntityService(d).records('units') if u['coordinates_match']]
+    if occupied:eligible &= ~np.isin(ids,occupied)
+    return eligible
+
+
+def edit_indices(document, indices):
+    if document.size not in SUPPORTED_MAP_SIZES:
+        raise ValueError('Unsupported native map size')
+    ids=np.unique(np.asarray(indices,dtype=np.int64))
+    if np.any(ids<0) or np.any(ids>=document.geometry.count):raise ValueError('Invalid tile index')
+    return ids
 
 
 class TerrainService:
@@ -19,47 +51,46 @@ class TerrainService:
     def paint(self, indices, material, experimental=False, variation=None):
         if material not in MATERIALS:
             raise ValueError('Unsupported material: ' + str(material))
-        resource = material in ('stone', 'iron')
         if variation is not None:
             VariationService.validate_value(variation)
         d = self.document
-        if d.size not in (400, 500):
-            raise ValueError('Editing is currently limited to map sizes 400 and 500')
-        ids = np.unique(np.asarray(indices, dtype=np.int64))
-        if np.any(ids < 0) or np.any(ids >= d.geometry.count):
-            raise ValueError('Invalid tile index')
-        logic, surface = d.grid(3003), d.grid(3037)
-        # Start with known flat, unoccupied land; never clear buildings, units,
-        # trees, water, boundary flags or unrecognized terrain by painting over it.
-        eligible = (d.geometry.playable[ids] & np.isin(logic[ids], [0x8000, 0x28000, 0x88000, 0x20008000]) &
-                    np.isin(surface[ids], [0, 1, 2, 16, 64, 128]) &
-                    (d.grid(3005)[ids] == 8) & (d.grid(3045)[ids] == 8) &
-                    (d.grid(3012)[ids] == 0) & (d.grid(3004)[ids] == 0) &
-                    (d.grid(3010)[ids] == 0))
-        # A populated save has units that are absent from the occupancy grid.
-        units = EntityService(d).records('units')
-        occupied = [u['tile_id'] for u in units if u['coordinates_match']]
-        if occupied:
-            eligible &= ~np.isin(ids, occupied)
+        ids=edit_indices(d,indices)
+        logic=d.grid(3003)
+        eligible=terrain_eligible(d,ids)
         allowed = ids[eligible]
         changed = 0
         with d.transaction('Paint ' + material.replace('_', ' ')):
-            if material=='marsh':
-                changed += d.change(3003, allowed, 0x20008000, 'Marsh')
-                changed += d.change(3007, allowed, 16, 'Marsh display')
-            elif resource:
-                changed += d.change(3003, allowed, 0x28000 if material == 'stone' else 0x88000, 'Resource')
-                changed += d.change(3007, allowed, 2064, 'Resource display')
+            # Explicit base-layer behavior from native6FE90/6FA10. Tree
+            # proximity is independent of the painted material and stays intact.
+            old_logic=logic[allowed].copy()
+            proximity=old_logic&np.uint32(0x2000)
+            flags={'sea':1,'river':0x100000,'ford':0x200000,'stone':0x28000,
+                   'iron':0x88000,'rocks':0x8080,'marsh':0x20008000,'pitch':0xa0008000}.get(material,0x8000)
+            changed+=d.change(3003,allowed,proximity|np.uint32(flags),'Terrain properties')
+            if material in ('sea','beach','marsh','pitch','middle_plateau','high_plateau'):
+                value={'sea':0,'beach':0,'marsh':8,'pitch':8,'middle_plateau':80,'high_plateau':130}[material]
+                changed+=d.change(3005,allowed,value,'Current height')
+                changed+=d.change(3045,allowed,value,'Base height')
+            elif material in ('river','ford'):
+                # The native brush lowers current height only when >=8, and
+                # retains default height (including pre-existing beach zero).
+                values=d.grid(3005)[allowed].astype(np.int16)
+                values=np.where(values>=8,d.grid(3045)[allowed].astype(np.int16)-8,values).clip(0,255)
+                changed+=d.change(3005,allowed,values,'Water depth')
             else:
-                resource_ids = allowed[np.isin(logic[allowed], [0x28000, 0x88000, 0x20008000])]
-                changed += d.change(3003, resource_ids, 0x8000, 'Clear resource')
-                changed += d.change(3007, resource_ids, 16, 'Clear resource display')
+                # Ordinary textures work on hills. Recover former water cells
+                # without flattening already elevated terrain.
+                water=allowed[(old_logic&np.uint32(0x300001))!=0]
+                values=np.maximum(8,d.grid(3045)[water])
+                changed+=d.change(3005,water,values,'Restore land height')
+                changed+=d.change(3045,water,values,'Restore land base height')
+            changed+=d.change(3007,allowed,2064 if material in ('stone','iron','rocks') else 16,'Terrain display')
             changed += d.change(3037, allowed, MATERIALS[material][0], 'Surface')
             if variation is not None:
                 changed += d.change(3008, allowed, variation, 'Texture variation')
         return {'requested_cells': len(ids), 'eligible_cells': len(allowed),
                 'skipped_cells': int((~eligible).sum()), 'changed_field_values': changed,
-                'experimental': False}
+                'experimental': material in ('sea','river','ford','beach','rocks','middle_plateau','high_plateau')}
 
     def inspect(self, x, y):
         d = self.document
@@ -84,9 +115,7 @@ class VariationService:
     def paint(self, indices, value):
         self.validate_value(value)
         d=self.document
-        if d.size not in (400,500): raise ValueError('Variation editing supports 400 and 500 maps')
-        ids=np.unique(np.asarray(indices,dtype=np.int64))
-        if np.any(ids<0) or np.any(ids>=d.geometry.count): raise ValueError('Invalid tile index')
+        ids=edit_indices(d,indices)
         allowed=ids[d.geometry.playable[ids]]
         with d.transaction('Set texture variation'):
             changed=d.change(3008,allowed,value,'Texture variation')
@@ -94,27 +123,33 @@ class VariationService:
 
 
 class HeightService:
-    """Height-only terrain experiments: preserve unknown derived terrain fields."""
+    """Absolute terrain heights; the document rebuilds native navigation on commit."""
     def __init__(self,document):
         self.document=document
 
     def paint(self,indices,height):
         if type(height) is not int or not 0<=height<=255:
             raise ValueError('Height must be a whole number from 0 to 255')
+        ids=edit_indices(self.document,indices)
+        return self.paint_values(ids,np.full(len(ids),height,dtype=np.uint8))
+
+    def paint_values(self,indices,heights):
         d=self.document
-        if d.size not in (400,500): raise ValueError('Height editing supports 400 and 500 maps')
-        ids=np.unique(np.asarray(indices,dtype=np.int64))
-        if np.any(ids<0) or np.any(ids>=d.geometry.count): raise ValueError('Invalid tile index')
-        eligible=(d.geometry.playable[ids] & np.isin(d.grid(3003)[ids],
-                  [0,0x80,0x8000,0x8080,0x10000000,0x10000080,0x10008000,0x10008080]) &
-                  (d.grid(3005)[ids]==d.grid(3045)[ids]))
-        for sid in (3012,3010,3004): eligible &= d.grid(sid)[ids]==0
-        units=[r['tile_id'] for r in EntityService(d).records('units') if r['coordinates_match']]
-        if units: eligible &= ~np.isin(ids,units)
-        allowed=ids[eligible]
-        with d.transaction('Set terrain height to %s' % height):
-            changed=d.change(3005,allowed,height,'Current height')
-            changed+=d.change(3045,allowed,height,'Base height')
+        ids=np.asarray(indices,dtype=np.int64)
+        values=np.asarray(heights)
+        if ids.ndim!=1 or values.ndim!=1 or len(ids)!=len(values):
+            raise ValueError('Each cell must have one corresponding height')
+        if len(np.unique(ids))!=len(ids):raise ValueError('Duplicate height mask cells')
+        edit_indices(d,ids)
+        if len(values) and (values.dtype.kind not in 'iu' or np.any(values<0) or np.any(values>255)):
+            raise ValueError('Heights must be whole numbers from 0 to 255')
+        eligible=terrain_eligible(d,ids,height=True);allowed=ids[eligible];values=values[eligible]
+        with d.transaction('Set terrain heights'):
+            changed=d.change(3005,allowed,values,'Current height')
+            changed+=d.change(3045,allowed,values,'Base height')
+            # Both native height brushes clear old rocks/cliff bits before the
+            # deferred visual pass. Do not invent the unported cliff graphics.
+            changed+=d.change(3003,allowed,d.grid(3003)[allowed]&np.uint32(0xffffff7f),'Clear previous cliff flags')
         return dict(eligible_cells=len(allowed),skipped_cells=int((~eligible).sum()),
                     changed_field_values=changed,experimental=True)
 
@@ -158,8 +193,8 @@ class MapValidator:
         d = document
         errors, warnings = [], []
         changed = sorted(d.replacements())
-        if d.size not in (400, 500):
-            warnings.append('New-map presets cover 400 and 500; this imported size is inspection-only')
+        if d.size not in SUPPORTED_MAP_SIZES:
+            warnings.append('Unrecognized map size: editing is unavailable')
         for sid in changed:
             from .document import GRID_TYPES, ENTITY_SECTIONS
             if sid not in GRID_TYPES and sid not in ENTITY_SECTIONS:
@@ -167,7 +202,7 @@ class MapValidator:
             if sid not in GRID_TYPES:
                 continue
             orig = np.frombuffer(d.container.section(sid)['decoded'], dtype=d.grid(sid).dtype)
-            if np.any(orig[~d.geometry.playable] != d.grid(sid)[~d.geometry.playable]):
+            if sid not in (3030,3021) and np.any(orig[~d.geometry.playable] != d.grid(sid)[~d.geometry.playable]):
                 errors.append('Boundary cells changed in section %s' % sid)
         if any(sid in changed for sid in (4013,3015,1014)):
             gids=[]
@@ -208,7 +243,7 @@ class MapValidator:
         if 4013 in changed:
             warnings.append('Experimental building edits: static reference layouts; pathfinding needs game verification')
         if 3005 in changed or 3045 in changed:
-            warnings.append('Experimental heights: steep edges may glitch or block movement; derived terrain layers are not rebuilt')
+            warnings.append('Native navigation edges and components are rebuilt; visual cliffs and other terrain graphics passes are incomplete')
         if not any(r['type'] in range(40, 45) for r in EntityService(d).records('buildings')):
             warnings.append('No starting castles: this is an editor map, not a ready-to-play skirmish')
         return {'valid': not errors, 'errors': errors, 'warnings': warnings,

@@ -1,0 +1,4 @@
+nav_terrain_rebuild:59a30:59a30-59a81
+nav_initial_terrain:5d8a0:5d8a0-5d8c3
+nav_gate_edges:d8ce0:d8ce0-d90c2
+castle_nth_point:e3360:e3360-e3459,e3459-e355c,e355c-e3588

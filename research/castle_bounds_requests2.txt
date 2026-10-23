@@ -1,0 +1,7 @@
+radius_table:6af00:6af00-6af5e
+castle_range_check:eef90:eef90-ef0cd
+enemy_proximity:ee320:ee320-ee640
+keep_constructor:74da0:74da0-75773
+input_building_type:c77c0:c77c0-c7a20
+postload:71670:71670-71ca0
+brush_points:6a620:6a620-6a772

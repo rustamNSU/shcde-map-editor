@@ -180,6 +180,10 @@ class MapDocument:
         self._transaction = command
         try:
             yield
+            if command.patches:
+                from .navigation import TOPOLOGY_SECTIONS, rebuild
+                if any(p.section in TOPOLOGY_SECTIONS for p in command.patches):
+                    rebuild(self)
         except BaseException:
             for patch in reversed(command.patches):
                 self._apply(patch, False)
@@ -208,7 +212,8 @@ class MapWriter:
         after=[r for r in EntityService(d).records('buildings') if 40<=r['type']<=44]
         signature=lambda rows:sorted((r['owner'],r['type'],r['x'],r['y']) for r in rows)
         if refresh_preview is None: refresh_preview=bool(d.replacements())
-        if d.size in (400,500) and (refresh_preview or signature(before)!=signature(after)):
+        from .geometry import SUPPORTED_MAP_SIZES
+        if d.size in SUPPORTED_MAP_SIZES and (refresh_preview or signature(before)!=signature(after)):
             from .menu import castle_markers
             markers=castle_markers(d)
             struct.pack_into('<I',header,d.container.headers['u2']['offset']+4+24,len(markers))

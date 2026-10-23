@@ -1,0 +1,8 @@
+startup_reset:cf8d0:cf8d0-cfac8
+non_skirmish_start:8ae80:8ae80-8b03b
+swap_players:cfe00:cfe00-cfe8b
+spawn_player_init:d1170:d1170-d15f6
+startup_aux:d4190:d4190-d41dd
+skirmish_start:94350:94350-96fb0
+load_map_to_play:84ac0:84ac0-853ea
+load_savegame:853f0:853f0-85466,85466-854b3,854b3-85b4d,85b4d-85b75,85b75-85bc8

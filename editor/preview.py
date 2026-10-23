@@ -7,12 +7,13 @@ from .menu import castle_markers
 
 def project(document,x,y):
     # Orthogonal storage diamond becomes the square menu overview.
-    scale=1/(2 if document.size==400 else 3)
+    scale=1/max(1,(document.size+199)//200)
     return ((x-y)*scale+100,(x+y-799)*scale+100)
 
 def render_preview(document):
     d=document
-    if d.size not in (400,500): raise ValueError('Preview rendering supports map sizes 400 and 500')
+    from .geometry import SUPPORTED_MAP_SIZES
+    if d.size not in SUPPORTED_MAP_SIZES: raise ValueError('Unsupported map size')
     rgb=render_rgb(d,objects=True,players=False)
     heights=np.full((800,800),8,dtype=np.float32)
     heights[d.geometry.y,d.geometry.x]=d.grid(3045)
@@ -21,10 +22,14 @@ def render_preview(document):
     shade=np.clip(1+(heights-8)*.0015+(dx-dy)*.018,.55,1.3)
     rgb=np.clip(rgb.astype(np.float32)*shade[:,:,None],0,255).astype('uint8')
     v,u=np.indices((200,200),dtype=float)
-    step=2 if d.size==400 else 3
+    step=max(1,(d.size+199)//200)
     x=np.rint(399.5+(u+v-199)*step/2).astype(int)
     y=np.rint(399.5+(v-u)*step/2).astype(int)
     pixels=rgb[y.clip(0,799),x.clip(0,799)].copy()
+    if d.size not in (400,500):
+        half=d.size/step/2
+        inside=(u>=100-half)&(u<100+half)&(v>=100-half)&(v<100+half)
+        pixels[~inside]=0
     if d.size==500:
         # Native500 preview footprint verified against Ada:166 pixels square.
         inside=(u>=18)&(u<184)&(v>=17)&(v<183)

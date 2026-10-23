@@ -65,8 +65,8 @@ def main():
     require(len(records)==18,'Expected exactly two nine-part complexes')
     require([r['type'] for r in records[:9]]==[r['type'] for r in records[9:]],'Different templates')
     unitrecords=objects(m,'units',ENTITY_LAYOUTS['units'])['records'];require(len(unitrecords)==2,'Expected two lords')
-    # These fields were already allocated by the supplied source's editing history.
-    require(u32(m.section(1047)['decoded'])>=27,'Source building high-water template insufficient')
+    # Section 1047 is the scenario selection index, not building allocation.
+    # Retain the direct clean-slot checks for this source-specific experiment.
     for s in range(19,28):require(not any(getrec(m,4013,812,s)),'New building slot not empty')
     require(not any(getrec(m,3015,1168,3)),'Third unit slot not empty')
     audit={'building_fields':[], 'targets':TARGETS}

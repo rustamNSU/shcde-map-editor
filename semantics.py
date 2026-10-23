@@ -54,6 +54,14 @@ BUILDING_NAMES.update({3:'Woodcutter',4:'Ox tether',5:'Iron mine',7:'Hunter’s 
     30:'Wheat farm',31:'Hops farm',32:'Apple orchard',33:'Dairy farm',34:'Mill',
     36:'Small church',37:'Church',38:'Cathedral',45:'Large gate',46:'Small gate',49:'Drawbridge',
     74:'Lookout tower',75:'Perimeter tower',76:'Defense tower',77:'Square tower',78:'Round tower'})
+BUILDING_NAMES.update({6:'Pitch rig',8:'Mercenary post',9:'Stone barracks',23:'Apothecary',
+    24:'Engineers guild',25:'Tunnellers guild',26:'Market',27:'Well',28:'Oil smelter',35:'Stables',
+    51:'Oil smelter parade ground',53:'Engineers parade ground',56:'Missile parade ground',
+    57:'Light infantry parade ground',58:'Heavy infantry parade ground',59:'Tunnellers parade ground',
+    62:'Gallows',63:'Stocks',65:'Maypole',66:'Garden',67:'Killing pit',70:'Water pot',
+    91:'Cesspit',92:'Burning stake',93:'Gibbet',94:'Dungeon',95:'Stretching rack',
+    97:'Chopping block',98:'Dunking stool',99:'War dog cage',100:'Statue',101:'Shrine',
+    103:'Dancing bear',108:'Bedouin stockade'})
 # FILE layouts, empirically checked on 2026-09-19 references, NOT runtime offsets.
 # Vegetation semantic fields are 12 bytes earlier than the SE runtime struct;
 # unit semantic fields below are 4 bytes later. Never apply a blanket relocation

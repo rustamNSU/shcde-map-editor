@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from semantics import ENTITY_LAYOUTS, tile_index, tile_xy
 from .services import EntityService
+from .geometry import SUPPORTED_MAP_SIZES
 
 LAYOUTS={k:(v[0],v[1],v[2],v[4]) for k,v in ENTITY_LAYOUTS.items()}
 LAYOUTS['gates']=(1031,516,0,8)
@@ -47,7 +48,7 @@ class BuildingService:
         d=self.document
         if key not in catalog(): raise ValueError('Unknown building: '+str(key))
         if type(owner) is not int or not 1<=owner<=8: raise ValueError('Player must be 1..8')
-        if d.size not in (400,500): raise ValueError('Building tools require a 400 or 500 map')
+        if d.size not in SUPPORTED_MAP_SIZES: raise ValueError('Building tools require a supported native map size')
         ids=self.footprint(key,x,y)
         if not np.all(d.geometry.playable[ids]): raise ValueError('The complete building must fit inside the map')
         if any(np.any(d.grid(sid)[ids]) for sid in (3012,3010,3004)):
@@ -55,13 +56,18 @@ class BuildingService:
         occupied=set(ids.tolist())
         if any(r['tile_id'] in occupied for r in EntityService(d).records('units')):
             raise ValueError('A unit occupies the footprint')
-        if not np.all(np.isin(d.grid(3003)[ids],[0x8000,0x28000,0x88000])):
+        # Ground/resource bits, cliff-edge flags and the elevated walk-surface
+        # bit occur on observed flat support. Water, walls, entities and unknown
+        # logic combinations are not accepted as clear building support.
+        land_bits=0x100a8080
+        if np.any(d.grid(3003)[ids]&np.uint32(~land_bits&0xffffffff)):
             raise ValueError('Placement currently needs clear, flat land')
         base=int(d.grid(3045)[ids[0]])
-        if not np.all((d.grid(3005)[ids]==base)&(d.grid(3045)[ids]==base)) or (key!='castle' and base!=8):
-            raise ValueError('Castle needs one flat plateau; other reference buildings require ground height 8')
-        if key=='castle' and any(not 0<=v+base-8<=255 for v in catalog()[key]['grids']['3005']):
-            raise ValueError('Castle elevation exceeds the height range')
+        if not np.all((d.grid(3005)[ids]==base)&(d.grid(3045)[ids]==base)):
+            raise ValueError('The complete building needs one flat plateau')
+        for sid in ('3005','3045'):
+            if any(not 0<=v+base-8<=255 for v in catalog()[key]['grids'][sid]):
+                raise ValueError('Building elevation exceeds the height range')
         if key=='castle' and any(40<=r['type']<=44 and r['owner']==owner for r in EntityService(d).records('buildings')):
             raise ValueError('This player already has a castle')
         return ids
@@ -80,7 +86,7 @@ class BuildingService:
     def place(self,key,x,y,owner=1):
         d=self.document; ids=self.check_placement(key,x,y,owner); p=catalog()[key]
         label='Place '+p['name']; dx=x-p['anchor'][0]; dy=y-p['anchor'][1]
-        elevation=int(d.grid(3045)[ids[0]])-8 if key=='castle' else 0
+        elevation=int(d.grid(3045)[ids[0]])-8
         remap={kind:{} for kind in LAYOUTS}; blobs={}; gidmap={}
         nextgid=I(d.section(1035)['decoded'],0)
         livegids=[r['global_id'] for k in ENTITY_LAYOUTS for r in EntityService(d).records(k)]
@@ -105,10 +111,10 @@ class BuildingService:
             struct.pack_into('<I',rec,go,gidmap[I(raw,go)])
             if kind=='buildings':
                 struct.pack_into('<H',rec,0xd6,owner); struct.pack_into('<I',rec,8,owner)
-                if key=='castle':
-                    # Native group-root ID: keep/door/camp point to the keep;
-                    # all four stockpile pieces point to the first pile.
-                    struct.pack_into('<I',rec,0x2a8,gidmap[I(raw,0x2a8)])
+                group=I(raw,0x2a8)
+                if group:
+                    if group not in gidmap: raise ValueError('Template has an external building group root')
+                    struct.pack_into('<I',rec,0x2a8,gidmap[group])
                 link=H(raw,0x192)
                 if link:
                     if link not in remap['buildings']: raise ValueError('Template has an external building link')
@@ -230,7 +236,7 @@ class BuildingService:
             row=next((r for r in rows if r['type'] in (30,31,32,33) and r['x']<=x<r['x']+(10 if r['type'] in (32,33) else 9)
                       and r['y']<=y<r['y']+(10 if r['type'] in (32,33) else 9)),None)
         if not row: return None
-        if row['type'] in (71,72,73,55):
+        if row['type'] in (51,53,55,56,57,58,59,71,72,73):
             raw=d.section(4013)['decoded']; parent=H(raw,row['slot']*812+0x192); row=byslot.get(parent,row)
         if row['type']==21:
             raw=d.section(4013)['decoded']
@@ -238,6 +244,9 @@ class BuildingService:
         if row['type']==10:
             row=next((r for r in rows if r['type']==41 and r['owner']==row['owner'] and
                       (row['x']-r['x'],row['y']-r['y']) in ((7,2),(10,2),(7,5),(10,5))),row)
+            if row['type']==10:
+                raw=d.section(4013)['decoded']; rootgid=I(raw,row['slot']*812+0x2a8)
+                row=next((r for r in rows if r['global_id']==rootgid and r['owner']==row['owner']),row)
         if row['type']==49:
             row=next((r for r in rows if r['owner']==row['owner'] and
                       ((r['type']==46 and (row['x'],row['y'])==(r['x'],r['y']+5)) or
@@ -249,7 +258,15 @@ class BuildingService:
             for rr in p['records']:
                 if rr['kind']!='buildings': continue
                 raw=bytes.fromhex(rr['data']); xx,yy=H(raw,0xee)+dx,H(raw,0xf0)+dy
-                candidate=next((r for r in rows if r['x']==xx and r['y']==yy and r['type']==H(raw,0xd2) and r['owner']==row['owner']),None)
+                def same_layout(r):
+                    if not (r['x']==xx and r['y']==yy and r['type']==H(raw,0xd2) and r['owner']==row['owner']): return False
+                    rr=d.section(4013)['decoded']; at=r['slot']*812
+                    if I(rr,at+0xf8)!=I(raw,0xf8): return False
+                    # Native garden samples store the distinct layout selector
+                    # here (24/33 for the two 3x3 variants); its SDK name is
+                    # still unknown. Do not confuse it with animation frames.
+                    return r['type']!=66 or I(rr,at+0x29c)==I(raw,0x29c)
+                candidate=next((r for r in rows if same_layout(r)),None)
                 if not candidate: break
                 matched.append(candidate)
             else: return key,row,matched
@@ -260,8 +277,7 @@ class BuildingService:
         if not group:
             i=tile_index(x,y)
             if not (int(d.grid(3003)[i])&0x100): return {'removed':0}
-            if not d.geometry.playable[i] or d.grid(3045)[i]!=8:
-                raise ValueError('Only flat-ground walls can be removed currently')
+            if not d.geometry.playable[i]: raise ValueError('Wall must be inside the playable map')
             ids=np.array([i]); records=[]; owner=1
         else:
             key,root,rows=group; owner=root['owner']; p=catalog()[key]
@@ -275,6 +291,8 @@ class BuildingService:
                     raise ValueError('This building has assigned workers; removal of active simulation links is not supported yet')
                 if any(rec[0x120:0x188]):
                     raise ValueError('This building contains goods; live resource-accounting removal is not supported yet')
+                if H(rec,0xd2)==35 and (rec[0x2a7] or any(rec[0x2e0:0x2f8])):
+                    raise ValueError('This stable has assigned horses; removal of active simulation links is not supported yet')
                 records.append(('buildings',slot,rec))
                 gate=H(rec,0x2d2)
                 if gate:

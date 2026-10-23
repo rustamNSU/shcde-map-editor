@@ -27,6 +27,7 @@ a = Analysis([str(root / 'app.py')], pathex=[str(root)],
     datas=[(str(root / 'editor/assets/templates'), 'editor/assets/templates'),
            (str(root / 'editor/assets/patterns'), 'editor/assets/patterns'),
            (str(root / 'editor/assets/app-icon.ico'), 'editor/assets')],
+    binaries=[(str(root / 'editor/assets/native/navigation.dll'), 'editor/assets/native')],
     hiddenimports=[], excludes=['tkinter','matplotlib','PySide6.QtWebEngineCore',
                                'PySide6.QtWebEngineWidgets','PySide6.QtQml'],
     noarchive=False)

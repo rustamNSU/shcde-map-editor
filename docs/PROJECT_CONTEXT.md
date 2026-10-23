@@ -8,8 +8,10 @@ Current capability summary, unresolved questions and application plan:
 Build a standalone external map editor for Stronghold Crusader Definitive Edition
 as an alternative to the built-in editor. The immediate work is reverse engineering
 the binary map format with the user, preserving evidence, and extending the parser
-and controlled map-writing tools. A finished GUI and a general-purpose writer do
-not exist yet.
+and controlled map-writing tools. A standalone GUI and shared transactional backend
+now exist; complete terrain/navigation regeneration remains unfinished. Current
+findings and next stages:
+[`RUNTIME_FORMAT_AUDIT_2026-10-23.md`](RUNTIME_FORMAT_AUDIT_2026-10-23.md).
 
 Continue from the existing research rather than starting over. Read
 [`AGENTS.md`](../AGENTS.md) for the ordered handoff,
@@ -25,6 +27,7 @@ and remaining unknowns. Later verified results supersede earlier hypotheses.
 | `C:\Users\rustam\AppData\LocalLow\Firefly Studios\Stronghold Crusader Definitive Edition\Maps` | Live game maps and user-created references; folder existence verified on 2026-09-19 |
 | `C:\Users\rustam\AppData\LocalLow\Firefly Studios\Stronghold Crusader Definitive Edition\Saves` | Saved simulation snapshots; Leto .msv files inspected read-only, see `SAVEGAME_LETO_2026-09-19.md` |
 | `C:\repositories\shcde-script-extender` | Runtime structures and IDs to cross-check against file evidence |
+| `C:\repositories\shc-dashboard` | Newer file-only DLL disassembly, native instruction probes and named runtime fields; supporting research, not a runtime editor dependency |
 | `C:\repositories\shcde-stats-rust` | Entity and player research, instructions and memory |
 | `C:\repositories\shc-eco-simulator` | Independent modeling evidence, including starting stockpile layout |
 | `C:\repositories\shcde-map-editor\vendor\sourcehold-maps` | Legacy map-format research; verify applicability to DE |

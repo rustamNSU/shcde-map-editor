@@ -1,7 +1,7 @@
 """Layer-specific, in-memory rectangular map clipboard; no entity references copied."""
 from dataclasses import dataclass
 import numpy as np
-from .services import EntityService
+from .services import terrain_eligible
 
 FIELDS={'surface':(3037,3008,3003,3007),'height':(3005,3045),'noise':(3008,)}
 
@@ -9,16 +9,10 @@ def eligible(document,ids,layer):
     d=document
     ok=d.geometry.playable[ids].copy()
     if layer=='noise':return ok
-    logic=d.grid(3003)[ids]
-    if layer=='surface':
-        ok &= np.isin(logic,[0x8000,0x28000,0x88000,0x20008000])
-        ok &= (d.grid(3005)[ids]==8)&(d.grid(3045)[ids]==8)
-    else:
-        ok &= np.isin(logic,[0,0x80,0x8000,0x8080,0x10000000,0x10000080,0x10008000,0x10008080])
-        ok &= d.grid(3005)[ids]==d.grid(3045)[ids]
-    for sid in (3012,3010,3004):ok &= d.grid(sid)[ids]==0
-    units=[r['tile_id'] for r in EntityService(d).records('units') if r['coordinates_match']]
-    if units:ok &= ~np.isin(ids,units)
+    # Surface clipboard retains terrain flags but not water depth/base height;
+    # keep water conversion in TerrainService instead of creating partial water.
+    ok &= terrain_eligible(d,ids,height=layer=='height')
+    if layer=='surface':ok &= (d.grid(3003)[ids]&np.uint32(0x300001))==0
     return ok
 
 @dataclass
@@ -50,5 +44,10 @@ class MapClipboard:
         changed=0
         with document.transaction('Paste '+self.layer):
             for sid,values in self.values.items():
-                changed+=document.change(sid,ids,values[positions],'Paste '+self.layer)
+                pasted=values[positions]
+                if sid==3003:
+                    pasted=(pasted&np.uint32(0xffffdfff))|(document.grid(3003)[ids]&np.uint32(0x2000))
+                changed+=document.change(sid,ids,pasted,'Paste '+self.layer)
+            if self.layer=='height':
+                changed+=document.change(3003,ids,document.grid(3003)[ids]&np.uint32(0xffffff7f),'Clear previous cliff flags')
         return dict(eligible_cells=len(ids),skipped_cells=self.width*self.height-len(ids),changed_field_values=changed)

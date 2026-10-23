@@ -94,7 +94,8 @@ def objects(m, kind, layout):
             rec['reference_bounds'] = bounds(inds)
         elif kind == 'vegetation':
             rec.update(world_x=h(0x5C), world_y=h(0x5E),
-                       hp=h(0x72), resource_state=h(0x78), growth_stage=u(0x80),
+                       hp=h(0x72), felled_state=h(0x76),
+                       resource_state=struct.unpack_from('<h', b, base + 0x78)[0], growth_stage=u(0x80),
                        growth_progress=u(0x84))
         elif kind == 'units':
             rec.update(owner=u(0x80), controller=b[base + 0x96])

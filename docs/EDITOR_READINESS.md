@@ -1,8 +1,11 @@
 # What we know, what remains, and how to start the editor
 
-Consolidated 2026-09-19 from the local code, reference analyses and later game
-experiments. This is the current decision guide; the linked reports retain exact
-sample counts, hashes and full diffs. It does not claim a complete format specification.
+Reviewed 2026-10-23. The standalone editor and shared backend already exist;
+the original sections below preserve the initial 2026-09-19 research/plan.
+For the current audit, corrected section meanings and next implementation stages,
+read [RUNTIME_FORMAT_AUDIT_2026-10-23.md](RUNTIME_FORMAT_AUDIT_2026-10-23.md).
+It includes direct DLL serialization bindings and the verified per-unit path block.
+This is not a complete format specification.
 
 Later evidence: [Leto save investigation](SAVEGAME_LETO_2026-09-19.md). The renamed
 map is identical to its original .msv. The reader now preserves the observed extra
@@ -17,12 +20,11 @@ The opaque 97-byte prefix persists even after a map-editor resave.
 
 ## Decision
 
-We can start the application now. Complete reverse engineering is not a prerequisite
-for a viewer or an editor that starts from a known-good map and preserves opaque data.
-The first app should open existing DE maps, display schematic terrain and objects,
-inspect cells, support undo/redo for narrowly defined edits, and save a new file.
-New maps should initially mean copies of validated templates with fixed size and
-player setup. General creation from zero bytes is a later capability.
+Continue the existing application, preserving its document/services/UI separation,
+opaque bytes and immutable templates. It already opens DE maps, renders schematic
+terrain/objects, edits supported layers/prefabs, supports undo/redo and exports maps.
+The next major writer requirement is coherent derived terrain/navigation updates.
+General creation from zero bytes remains a later capability.
 
 Unknown values can be inherited from a template. A value that was harmless before
 an edit is not necessarily valid after it: connectivity, object references and
@@ -188,7 +190,9 @@ The tested starting complex has nine building records and one lord:
 | 55 Campground | (0,8) | 7x7 |
 | 10 stockpile parts | (7,2), (10,2), (7,5), (10,5) | 2x2 each |
 
-Total footprint references: 117. No universal group field is established.
+Total footprint references: 117. Later castle audits establish group-root global
+IDs at building+0x2A8, but the stockpile has a separate group root. This is not a
+universal nine-record castle membership rule; see the castle-orientation report.
 Moving a complex requires embedded coordinates and tile IDs, grids, unit state
 and player links, not merely the keep's primary position.
 
@@ -200,9 +204,10 @@ Players 2022 has nine records of stride 0x583C. Tested uint32 links:
 0x94 keep slot, 0xBC first stockpile slot, 0x1D4 Campground slot. Associated
 coordinate/tile-ID fields are corroborated; runtime names can be misleading.
 1190 holds tested lord-slot lookups (uint16), 1191 lord-global-ID lookups (uint32).
-1035 acts as the next global-ID counter in the cloning experiment. 1047 is used
-as a source-specific building allocation/high-water assumption, not a recovered
-general allocator. 1051 is not the menu player count.
+1035 is the next global-ID counter, now corroborated by the DLL's native
+assign-then-increment instructions. 1047 is the scenario selection index stored
+by the native scenario loader; it must not gate building allocation. 1051 is not
+the menu player count. See the 2026-10-23 registry audit for source RVAs.
 
 Stored goods at player +0x4D0 (stride 4) now cross-check against storage-building
 inventories for 23 non-null/non-gold entries across seven saves. Gold at +0x50C is
@@ -225,13 +230,15 @@ marker pairs with stride 8; both 0xFFFFFFFF means absent. U4 +0x50 is map size.
 U3 contains an embedded filename. These offsets exclude block length prefixes.
 
 For the tested size-400 KeepTwo maps, marker projection
-`((x-y+197)//2, (x+y-598)//2)` matched 23 keeps across six maps. Other sizes and
-keep variants need validation. Markers are distinct from the preview raster.
+`((x-y+197)//2, (x+y-598)//2)` matched 23 keeps across six maps. The implemented
+500 projection is `((x-y+301)//3,(x+y-495)//3)`, with observed one-pixel native
+x-rounding differences; existing valid markers are retained. Markers are distinct
+from the preview raster. See the later Ada resave/repair report.
 
 Preview decoding is known: 512 bytes of RGB555 palette plus 200x200 uint8 indices.
-An approximate schematic preview is a possible future writer feature; reproducing
-the native renderer is not required to design the app. Neither preview writer nor
-header-update API is currently implemented. Validate any new encoder in the game.
+The writer now generates a schematic preview and refreshes player counts/markers
+on explicit saves. Low-level no-op serialization stays lossless. Exact native
+artwork is not reproduced; embedded U3 filename rewriting remains unimplemented.
 
 The three-player generated map kept two-player menu data and an old preview until
 the user resaved it. Count/markers/filename/preview must be handled explicitly when

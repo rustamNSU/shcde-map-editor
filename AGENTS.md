@@ -1,5 +1,81 @@
 # Handoff for the next agent
 
+Player/map gold (2026-10-23): docs/PLAYER_GOLD_STARTUP_2026-10-23.md plus native
+supplement.2022 has9*583C bytes, runtime379ADD0; signed currentGold+50C, incoming
+Gold+4A8. FreshMP/skirmish94350 clears goods4D0..530 forP1..8, including50C;
+D1170 re-seeds incoming4A8 from2D4DA0 indexedgoods/fairness/humanAI, so editing
+map treasury does NOT set ordinaryMP startinggold. bMultiplayerSave arg2!=0
+returns before94350clear. DLL_LoadSaveGame853F0 uses direct load instead.
+Scenario startgoods[15]/special_start_gold are separate settings, not proof of
+MP override. Research only; preview accepted as-is, no app/EXE changes.
+
+Map thumbnail research (2026-10-23): docs/MAP_PREVIEW_RESEARCH_2026-10-23.md,
+MAP_PREVIEW_MANAGED_2026-10-23.md and MAP_PREVIEW_NATIVE_2026-10-23.md.
+Embedded picture is DCL-compressed40512 bytes:256 RGB555 palette entries plus
+200x200 indices, NOT PNG. Native52B0 calls radar generatorF4DF0; GetSaveRadar
+84290 uses same producer; UnpackRadarToARGB87B80 decodes it. Cell colour tables,
+random3008, logic3003/surface3037, runtimeLuminescence at4EC82B0; no sprites or
+Unity screenshot in traced save chain. Native first-seen RGB555 palette, not
+MEDIANCUT; unused native palette tail is uninitialized. Current editor/preview.py
+remains schematic/custom gradients/icons. Same-map comparison under output/
+preview-comparison-2026-10-23 proves visible difference; source hash unchanged.
+Research only this turn; releaseEXE SHA stays6d72e25e4a80f798c95ce0012355e05570e8b9612794142abbe24843761e9066.
+
+Structure heights (2026-10-23): docs/STRUCTURE_HEIGHTS_2026-10-23.md.
+Native surface offsets: lowwall60/high90, crenellated68/98, standardkeep41=92,
+towers74..78=296/148/180/192/192, gates45/46=128 in6B910(base3045+128).
+Do not confuse gate raw3005=98 atground8 with computed surface136 or ordinary
+roof-unit Z138(raw98+unitB8=40). UnitB6+B8 is effective Z;184FD0 sets tower/keep
+B8 fromC07C0 andB6 frombuilding base. Crenellation barrier helper6B530 adds10/20
+above its surface; alternating0x400000 is not a separate98/68 selector.
+12 original-instruction Unicorn height cases passed. Research only; noEXE changes.
+
+Wooden-wall research (2026-10-23): docs/WOODEN_WALLS_2026-10-23.md. Legacy
+STRUCT_WOOD_WALL110/mapper46 is Crusader low STONE wall: native6F230/6CB20 adds60,
+sets10100, C8CC0 charges stored stone4 via cumulative(2*high+low+remainder)/4.
+Stock tooltip016 is Low Wall. Retained sound and enum names do not prove a
+separate wooden palisade. SDK WoodWallUpdate declaration is not a valid real
+updater: native table2DEAE0 index110 contains packed data, not a code pointer.
+Wood gate47 has real updaterA5C80 but no constructor in generic placement case;
+HUD wood-gate buttons commented out. Read report before exposing legacy IDs.
+This was research only; no app/EXE/game changes.
+
+Latest implementation (2026-10-23): editor0.3.0, see
+docs/MAP_EDITOR_UPDATE_2026-10-23.md and linked terrain/castle/catalog/mask reports.
+New-map presets160/200/300/400/500/600/700/800; exact native boundary matches
+four reference sizes, unknown template sections retained.69 building prefabs;
+castle uses sparse117 cells (not180-cell rectangle). Native construction radius
+45/50/60/70/80/90/100/100; entrance center from player link/orientation. Amber
+castle terrain-clearing overlay changes no map bytes. Hill painting enabled,
+water/beach/pitch/rocks/plateau palette, image conversion and valued height masks
+up to800x800. Native navigation port in editor/native/navigation.cpp compiled
+by research/build_navigation.ps1 to editor/assets/native/navigation.dll (our
+offline helper, NOT the game DLL). The spec bundles it into the singleEXE.
+Outer document transactions rebuild3030/3021 with undo/rollback on topology
+changes. D86F0/DE6A0/E49D0/gate rules validated against original instructions.
+Do not claim full cliff/shore artwork/cache regeneration: that remains incomplete.
+133 source tests passed (108backend/integration+24UI+one added overlay regression),
+logs output/release-0.3.0. Final EXE smoke and all8-size portable CLI export/
+reopen checks passed outside the sandbox using isolated settings/output files.
+Portable PyInstaller extraction inside this sandbox fails due its user-only
+temporary directory security descriptor; isolated EXE verification needs ordinary
+user execution permission. Do not mistake this for a map-format failure.
+
+Latest review (2026-10-23): read docs/RUNTIME_FORMAT_AUDIT_2026-10-23.md before
+the next editor update. Direct pinned-DLL registry at RVA0x336b20 maps212 section
+descriptors,175 default-enabled;38 DE files match its sizes/compression and rebuild
+byte-exactly. research/audit_native_sections.py regenerates evidence without game
+process access. Full snapshot and11-function Ghidra export request list are in
+research/.1171 is the per-unit1000-byte packed route array;3030 is edge masks;
+1040 is deterministic RNG state;1047 is scenario-selection state, never building
+allocation. Corrected the old generator guard and signed vegetation resource
+decoder (+0x78), added felled_state (+0x76). Main next work: coherent derived
+terrain/navigation updates and richer read-only inspectors. No GUI/EXE update
+in this review.97 tests pass after restoring missing examples as hash-checked
+copies via research/prepare_test_examples.py --source <original Maps directory>.
+Source maps/game files unchanged. The older GUI-only drawing task below is
+historical; do not restart it unless the user returns to that task.
+
 Repository layout: `app.py`, `maptool.py`, and `semantics.py` remain at the root
 because the GUI/CLI and packaged build import them. App code is under `editor/`,
 unit tests under `tests/`, and reproducible reference analysis and experiment

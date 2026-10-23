@@ -1,0 +1,11 @@
+save_savegame:86f80:86f80-871f9
+load_savegame:853f0:853f0-85466,85466-854b3,854b3-85b4d,85b4d-85b75,85b75-85bc8
+load_map_to_play:84ac0:84ac0-853ea
+save_container:52b0:52b0-5ad8
+load_container:87d0:87d0-986d
+load_scenario:87c40:87c40-87d01
+build_tile_edge_mask:d86f0:d86f0-d8cdb
+save_building_count:b8220:b8220-b8264
+save_unit_count:186040:186040-18609d
+allocate_vegetation_descriptor:107290:107290-10738d
+allocate_projectile:9be80:9be80-9bef0,9bef0-9bfa9,9bfa9-9bfbb

@@ -31,7 +31,7 @@ class EditorState:
             state.material = 'oasis'
         if state.brush_shape not in ('square','circle','mask'):
             state.brush_shape = 'square'
-        state.brush_size = max(1,min(500,state.brush_size))
+        state.brush_size = max(1,min(800,state.brush_size))
         # Start each session at ordinary ground, never a previous risky target.
         state.height=8
         state.variation=max(0,min(65535,state.variation))

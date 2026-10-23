@@ -15,11 +15,13 @@ from . import (MapReader, MapWriter, TemplateLibrary, TerrainService, EntityServ
                MapValidator, Pattern, PatternLibrary)
 from .version import __version__
 from .services import MATERIALS, HeightService, VariationService
-from .render import render_rgb, PLAYER_COLORS, CASTLE_AREA_RADIUS
+from .render import render_rgb, PLAYER_COLORS, CASTLE_AREA_RADIUS, HEIGHT_COLORS
 from .settings import EditorSettings
 from .recent import RecentFiles
 from .state import EditorState
-from .mask_editor import MaskEditor
+from .mask_editor import MaskEditor, ImageMaskImportDialog
+from .geometry import SUPPORTED_MAP_SIZES
+from .castle_areas import prospective_rewrite_indices
 from .clipboard import MapClipboard
 from .buildings import BuildingService, catalog
 from .trees import TreeService, tree_catalog
@@ -122,6 +124,7 @@ class MapCanvas(QGraphicsView):
         self.layer = 'surface'
         self.show_objects = True
         self.show_players = True
+        self.show_terrain_rewrite = True
         self.area_opacity = 25
         self.symmetry_horizontal=False
         self.symmetry_vertical=False
@@ -139,7 +142,8 @@ class MapCanvas(QGraphicsView):
     def refresh(self):
         if self.document is None:
             return
-        rgb = render_rgb(self.document, self.layer, self.show_objects, self.show_players, self.area_opacity)
+        rgb = render_rgb(self.document, self.layer, self.show_objects, self.show_players,
+                         self.area_opacity, terrain_rewrite=self.show_terrain_rewrite)
         image = QImage(rgb.data, 800, 800, rgb.strides[0], QImage.Format.Format_RGB888).copy()
         if self.pixmap is None:
             self.pixmap = self.scene().addPixmap(QPixmap.fromImage(image))
@@ -186,6 +190,28 @@ class MapCanvas(QGraphicsView):
     def symmetric_ids(self,ids):
         return self.clip_ids(self.document.geometry.symmetric_indices(
             ids,self.symmetry_horizontal,self.symmetry_vertical))
+
+    def height_samples(self, anchor):
+        """Reflect height values with their cells; original stamp wins at overlaps."""
+        pattern, g = self.pattern, self.document.geometry
+        x, y = anchor
+        ids, values = pattern.height_samples(g, x-len(pattern.cells[0])//2,
+                                            y-len(pattern.cells)//2)
+        kept = np.isin(ids, self.clip_ids(ids))
+        ids, values = ids[kept], values[kept]
+        x0,y0,x1,y1=g.bounds
+        xs=[g.x[ids]];ys=[g.y[ids]]
+        if self.symmetry_vertical: xs.append(x0+x1-1-g.x[ids])
+        if self.symmetry_horizontal: ys.append(y0+y1-1-g.y[ids])
+        all_ids=[];all_values=[]
+        for xx in xs:
+            for yy in ys:
+                inside=(xx>=0)&(xx<800)&(yy>=0)&(yy<800)
+                target=g.index_grid[yy[inside],xx[inside]]
+                valid=(target>=0)&np.isin(target,self.clip_ids(target[target>=0]))
+                all_ids.append(target[valid]);all_values.append(values[inside][valid])
+        ids, first=np.unique(np.concatenate(all_ids),return_index=True)
+        return ids,np.concatenate(all_values)[first]
 
     def mousePressEvent(self, event):
         if not self.document:
@@ -325,20 +351,27 @@ class MapCanvas(QGraphicsView):
             if self.tool in ('Paint','Height','Variation','Vegetation'): ids=self.symmetric_ids(ids)
             rgba=np.zeros((800,800,4),dtype=np.uint8)
             if (self.tool=='Build' and self.building_key=='castle' and self.hover_cell
-                    and self.show_players and self.layer=='surface'):
+                    and self.layer=='surface'):
                 x,y=self.hover_cell
-                radius=CASTLE_AREA_RADIUS[self.document.size]
-                # Keep anchor -> middle of the three-cell doorway between keep/camp.
-                cx,cy=x+3,y+7
                 g=self.document.geometry
-                area=g.rectangle(cx-radius,cy-radius,2*radius+1,2*radius+1)
-                area=area[g.playable[area]]
-                rgba[g.y[area],g.x[area]]=(*PLAYER_COLORS[self.building_owner-1],
-                                           round(max(0,min(100,self.area_opacity))*255/100))
+                if self.show_players:
+                    radius=CASTLE_AREA_RADIUS[self.document.size]
+                    cx,cy=x+3,y+7
+                    area=g.rectangle(cx-radius,cy-radius,2*radius+1,2*radius+1)
+                    area=area[g.playable[area]]
+                    rgba[g.y[area],g.x[area]]=(*PLAYER_COLORS[self.building_owner-1],
+                                               round(max(0,min(100,self.area_opacity))*255/100))
+                if self.show_terrain_rewrite:
+                    area=prospective_rewrite_indices(self.document,x,y)
+                    rgba[g.y[area],g.x[area]]=(255,177,45,125)
             if len(ids):
                 g=self.document.geometry
                 ids=ids[g.playable[ids]]
                 rgba[g.y[ids],g.x[ids]]=(181,219,180,90)
+                if self.tool=='Height' and self.pattern is not None and self.pattern.is_height and self.hover_cell:
+                    height_ids,values=self.height_samples(self.drag_origin or self.hover_cell)
+                    rgba[g.y[height_ids],g.x[height_ids],:3]=HEIGHT_COLORS[values]
+                    rgba[g.y[height_ids],g.x[height_ids],3]=150
             self.preview_image=QImage(rgba.data,800,800,rgba.strides[0],QImage.Format.Format_RGBA8888).copy()
         painter.drawImage(QPointF(0,0),self.preview_image)
         if self.hover_cell:
@@ -447,8 +480,15 @@ class EditorWindow(QMainWindow):
             if toolbar:
                 bar.addAction(action)
             return action
-        add('New 400',lambda:self.new_map(400),QKeySequence.StandardKey.New,tip='Create a new 400 map from the empty template')
-        add('New 500',lambda:self.new_map(500),tip='Create a new 500 map from the empty template')
+        self.new_size=QComboBox()
+        for size in SUPPORTED_MAP_SIZES:self.new_size.addItem(str(size),size)
+        self.new_size.setCurrentIndex(SUPPORTED_MAP_SIZES.index(400))
+        self.new_size.setToolTip('Native map size for a new empty map')
+        bar.addWidget(self.new_size)
+        add('New map',lambda:self.new_map(self.new_size.currentData()),QKeySequence.StandardKey.New,
+            tip='Create an empty map at the selected native size')
+        for size in SUPPORTED_MAP_SIZES:
+            add('New %s' % size,lambda s=size:self.new_map(s),toolbar=False)
         add('Open…',self.open_map,QKeySequence.StandardKey.Open,tip='Open a map or save file')
         add('Recent maps…',self.open_recent,tip='Reopen one of the last 50 opened or saved maps')
         bar.addSeparator()
@@ -456,6 +496,8 @@ class EditorWindow(QMainWindow):
         self.redo_action=add('Redo',self.redo,QKeySequence.StandardKey.Redo,'Edit',canvas=True)
         add('Fit map',self.canvas.fit_map,'F','View',canvas=True)
         add('Validate',self.validate,group='File',tip='Check structural validity and export limitations')
+        add('Rebuild navigation',self.rebuild_navigation,group='Edit',toolbar=False,
+            tip='Recalculate native movement edges and connected components as one undoable edit')
         add('Save',self.save_map,QKeySequence.StandardKey.Save,tip='Save to the current map; confirm before replacing an existing file')
         add('Save As…',self.save_as,QKeySequence.StandardKey.SaveAs,tip='Choose a map filename; confirm before replacing an existing file')
         add('Settings',self.show_settings,group='View',tip='Display preferences and reset editor controls')
@@ -538,7 +580,7 @@ class EditorWindow(QMainWindow):
         self.brush_panel.library_operations.addWidget(button('Edit','Edit selected mask pixels and dimensions',self.edit_mask))
         self.brush_panel.library_operations.addWidget(button('Edit tags','Assign comma-separated tags to the selected mask',self.edit_mask_tags))
         self.brush_panel.library_operations.addWidget(button('Masks folder','Open the mask library folder',self.open_masks_folder))
-        for label,tip,handler in [('Create','Create a custom mask',self.create_mask),('Import','Import JSON or PNG mask: white paints; black/transparent skips. One pixel per cell, maximum 120 × 120.',self.import_mask)]:
+        for label,tip,handler in [('Create','Create a binary or height mask',self.create_mask),('Import','Convert a color image to a binary or height mask. Choose output dimensions, fit and thresholds.',self.import_mask)]:
             self.brush_panel.operations.addWidget(button(label,tip,handler))
         trees=self.group('Vegetation',layout)
         self.vegetation_group=trees.parentWidget()
@@ -553,7 +595,7 @@ class EditorWindow(QMainWindow):
         self.height_control=SliderValue(0,255,self.state.height,tip='Target height 0–255; default 8. Values below 8 or above 130 are experimental and shown in red.')
         self.height_control.spin.valueChanged.connect(self.set_height)
         heightbox.addWidget(self.height_control)
-        self.muted('Height (E): paint target elevation.\nSteep edges need in-game testing.',heightbox)
+        self.height_mask_hint=self.muted('Height (E): paint target elevation.\nNavigation updates after each stroke.',heightbox)
         variationbox=self.group('Texture variation / noise',layout)
         self.variation_group=variationbox.parentWidget()
         self.variation_control=SliderValue(0,65535,self.state.variation,
@@ -578,7 +620,7 @@ class EditorWindow(QMainWindow):
         selection.addWidget(self.fill_button)
         row=QHBoxLayout()
         self.clear_button=button('Clear','Clear selection (Esc on canvas)',self.clear_selection)
-        self.capture_button=button('Save mask','Capture non-earth cells in selection; maximum 120 × 120',self.capture_mask)
+        self.capture_button=button('Save mask','Capture terrain coverage or height values from the selection',self.capture_mask)
         row.addWidget(self.clear_button)
         row.addWidget(self.capture_button)
         selection.addLayout(row)
@@ -614,14 +656,32 @@ class EditorWindow(QMainWindow):
         self.building_list.setMinimumHeight(240)
         self.building_list.setMaximumHeight(310)
         self.building_list.setToolTip('Click a building, then click the map. Green preview fits; red means occupied or outside the map. G: Build; D: Remove.')
+        self.building_search=QLineEdit()
+        self.building_search.setPlaceholderText('Find a building…')
+        self.building_category=QComboBox()
+        self.building_category.addItem('All categories','')
+        for category in sorted({p['category'] for p in catalog().values()}):
+            self.building_category.addItem(category,category)
+        buildings.addWidget(self.building_search)
+        buildings.addWidget(self.building_category)
         for key,p in sorted(catalog().items(),key=lambda item:(item[1]['category'],item[1]['name'])):
             from PySide6.QtWidgets import QListWidgetItem
             item=QListWidgetItem('%s  ·  %s × %s' % (p['name'],p['width'],p['height']))
             item.setData(Qt.ItemDataRole.UserRole,key)
+            item.setData(Qt.ItemDataRole.UserRole+1,p['category'])
             item.setToolTip('%s — %s\nIncludes all linked parts. Anchor: top-left. Reference orientation.\nExperimental export: verify in the game.' % (p['category'],p['name']))
             self.building_list.addItem(item)
             if key=='castle': self.building_list.setCurrentItem(item)
         self.building_list.itemClicked.connect(self.choose_building)
+        def filter_buildings():
+            query=self.building_search.text().strip().casefold()
+            category=self.building_category.currentData()
+            for i in range(self.building_list.count()):
+                item=self.building_list.item(i)
+                item.setHidden(bool(query and query not in item.text().casefold()) or
+                               bool(category and category!=item.data(Qt.ItemDataRole.UserRole+1)))
+        self.building_search.textChanged.connect(filter_buildings)
+        self.building_category.currentIndexChanged.connect(filter_buildings)
         buildings.addWidget(self.building_list)
         self.muted('Reference orientations · experimental export\nCastles include campfire, stockpile and lord.',buildings)
         self.overview=QLabel()
@@ -766,7 +826,9 @@ class EditorWindow(QMainWindow):
     def set_mask(self, path):
         self.state.mask_path=path
         self.state.brush_shape='mask'
-        self.set_tool(self.state.tool if self.state.tool in ('Height','Variation','Vegetation') else 'Paint')
+        try: height_mask=PatternLibrary.load(path).is_height
+        except (OSError,ValueError,KeyError,TypeError): height_mask=False
+        self.set_tool('Height' if height_mask else self.state.tool if self.state.tool in ('Height','Variation','Vegetation') else 'Paint')
 
     def rotate_mask(self, delta):
         self.state.rotation=(self.state.rotation+delta)%360
@@ -853,6 +915,10 @@ class EditorWindow(QMainWindow):
         tool=self.state.tool
         brush=tool in ('Paint','Height','Variation','Vegetation')
         self.height_group.setVisible(tool=='Height')
+        height_mask=self.canvas.pattern is not None and self.canvas.pattern.is_height and tool=='Height'
+        self.height_control.setEnabled(not height_mask)
+        self.height_mask_hint.setText('Mask supplies each cell’s elevation. Rotate, mirror or invert it in Masks.' if height_mask
+            else 'Height (E): paint target elevation.\nNavigation updates after each stroke.')
         self.variation_group.setVisible(tool=='Variation')
         self.vegetation_group.setVisible(tool=='Vegetation')
         self.terrain_options_group.setVisible(tool=='Paint')
@@ -871,8 +937,8 @@ class EditorWindow(QMainWindow):
         self.selection_label.setText('%s × %s cells' % (selection[2],selection[3]) if selection else 'No selection')
         for w in (self.fill_button,self.clear_button,self.capture_button,self.clip_selection):
             w.setEnabled(selection is not None)
-        self.capture_button.setEnabled(selection is not None and max(selection[2:])<=120)
-        self.selection_label.setToolTip('Select a rectangle to enable Fill, Clear and Save mask. Masks must be at most 120 × 120 cells.')
+        self.capture_button.setEnabled(selection is not None and max(selection[2:])<=800)
+        self.selection_label.setToolTip('Select a rectangle to Fill, Clear or capture a binary/height mask, up to 800 × 800 cells.')
 
     def set_selection_clip(self, on):
         self.canvas.clip_selection=on
@@ -1084,7 +1150,7 @@ class EditorWindow(QMainWindow):
             pix=self.canvas.pixmap.pixmap().copy(x0,y0,x1-x0,y1-y0)
             self.overview.setPixmap(pix.scaled(160,105,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation))
 
-    def paint(self, ids):
+    def paint(self, ids, use_mask=True):
         if not self.document:
             return
         if not len(ids):
@@ -1109,8 +1175,13 @@ class EditorWindow(QMainWindow):
                 self.update_document_ui()
                 self.statusBar().showMessage('Planted %s trees/shrubs; occupied or unsuitable cells skipped' % report['planted'])
                 return
-            ids=self.canvas.symmetric_ids(ids)
-            report=(VariationService(self.document).paint(ids,self.state.variation) if self.state.tool=='Variation'
+            if (use_mask and self.state.tool=='Height' and self.canvas.pattern is not None
+                    and self.canvas.pattern.is_height and self.canvas.drag_origin is not None):
+                ids, values=self.canvas.height_samples(self.canvas.drag_origin)
+                report=HeightService(self.document).paint_values(ids,values)
+            else:
+                ids=self.canvas.symmetric_ids(ids)
+                report=(VariationService(self.document).paint(ids,self.state.variation) if self.state.tool=='Variation'
                     else HeightService(self.document).paint(ids,self.state.height) if self.state.tool=='Height'
                     else TerrainService(self.document).paint(ids,self.state.material,variation=self.state.variation if self.state.uniform_variation else None))
             if not report['eligible_cells']:
@@ -1124,7 +1195,7 @@ class EditorWindow(QMainWindow):
 
     def fill_selection(self):
         if self.document and self.canvas.selection:
-            self.paint(self.document.geometry.rectangle(*self.canvas.selection))
+            self.paint(self.document.geometry.rectangle(*self.canvas.selection),use_mask=False)
 
     def undo(self):
         if self.document:
@@ -1206,13 +1277,26 @@ class EditorWindow(QMainWindow):
         self.canvas.show_grid=v.grid.isChecked()
         self.canvas.show_objects=v.objects.isChecked()
         self.canvas.show_players=v.players.isChecked()
+        self.canvas.show_terrain_rewrite=v.terrain_rewrite.isChecked()
         self.canvas.area_opacity=v.opacity.value()
         self.canvas.invalidate_preview()
         self.settings.values.update(castle_area_opacity=self.canvas.area_opacity,
             show_castle_areas=self.canvas.show_players,show_grid=self.canvas.show_grid,
-            show_objects=self.canvas.show_objects,view_layer=self.canvas.layer)
+            show_objects=self.canvas.show_objects,view_layer=self.canvas.layer,
+            show_terrain_rewrite=self.canvas.show_terrain_rewrite)
         self.preference_timer.start(250)
         self.update_document_ui()
+
+    def rebuild_navigation(self):
+        if self.document is None or self.busy:return
+        try:
+            from .navigation import rebuild
+            with self.document.transaction('Rebuild navigation'):
+                report=rebuild(self.document)
+            self.update_document_ui()
+            self.statusBar().showMessage('Navigation rebuilt: %s components · %s changed values' %
+                (report['components'],report['changed_field_values']))
+        except Exception as error:self.error(str(error))
 
     def validate(self):
         if self.document:
@@ -1291,6 +1375,7 @@ class EditorWindow(QMainWindow):
             self.state.brush_shape='mask'
             self.state.mask_tag=''
             self.reload_patterns()
+            if self.canvas.pattern is not None and self.canvas.pattern.is_height:self.set_tool('Height')
 
     def edit_mask(self):
         item=self.brush_panel.gallery.currentItem()
@@ -1310,25 +1395,29 @@ class EditorWindow(QMainWindow):
             self.error('Select a rectangle first. Painted or resource cells become the mask; earth stays transparent.')
             return
         x,y,w,h=self.canvas.selection
-        if w>120 or h>120:
-            self.error('Masks may be at most 120 × 120 cells')
+        if w>800 or h>800:
+            self.error('Masks may be at most 800 × 800 cells')
             return
         name,ok=QInputDialog.getText(self,'Save selection mask','Pattern name')
         if not ok:
             return
         try:
-            cells=[]
+            cells=[];heights=[]
             for dy in range(h):
-                row=[]
+                row=[];height_row=[]
                 for dx in range(w):
                     try:
                         i=self.document.geometry.index(x+dx,y+dy)
-                        on=self.document.geometry.playable[i] and (self.document.grid(3037)[i]!=0 or self.document.grid(3003)[i] in (0x28000,0x88000,0x20008000))
+                        on=self.document.geometry.playable[i] and (self.state.tool=='Height' or self.document.grid(3037)[i]!=0 or self.document.grid(3003)[i] != 0x8000)
+                        value=int(self.document.grid(3005)[i])
                     except ValueError:
-                        on=False
+                        on=False;value=0
                     row.append(int(on))
+                    height_row.append(value)
                 cells.append(tuple(row))
-            saved=self.pattern_library.save(Pattern(name,tuple(cells)))
+                heights.append(tuple(height_row))
+            saved=self.pattern_library.save(Pattern(name,tuple(cells),
+                heights=tuple(heights) if self.state.tool=='Height' else ()))
             self.state.mask_path=str(saved)
             self.state.brush_shape='mask'
             self.state.mask_tag=''
@@ -1337,10 +1426,18 @@ class EditorWindow(QMainWindow):
             self.error(str(error))
 
     def import_mask(self):
-        path,_=QFileDialog.getOpenFileName(self,'Import mask','','Masks (*.json *.png);;PNG image (*.png);;JSON mask (*.json)')
+        path,_=QFileDialog.getOpenFileName(self,'Import mask','',
+            'Images and masks (*.json *.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff *.gif *.ico);;All files (*)')
         if path:
             try:
-                self.run_mask_editor(PatternLibrary.load(path))
+                if Path(path).suffix.lower()=='.json':
+                    self.run_mask_editor(PatternLibrary.load(path))
+                else:
+                    dialog=ImageMaskImportDialog(self,path,self.settings.values.get('image_import'))
+                    if dialog.exec()==QDialog.DialogCode.Accepted:
+                        self.settings.values['image_import']=dialog.settings.to_dict()
+                        self.save_preferences()
+                        self.run_mask_editor(dialog.pattern)
             except Exception as error:
                 self.error(str(error))
 
@@ -1350,8 +1447,8 @@ class EditorWindow(QMainWindow):
 
     def about(self):
         QMessageBox.information(self,f'About SHC DE Map Editor',
-            f'Version {__version__}\n\n400 / 500 templates · In-memory edits · Undo / redo · Mask library\n\n'
-            'Terrain, height, building and tree editing. Fresh schematic export previews. Castle areas are 141 cells wide on size 400 and 161 on size 500. Native preview artwork and 3D are not implemented.\n\n'
+            f'Version {__version__}\n\n160–800 map presets · In-memory edits · Undo / redo · Image and height masks\n\n'
+            'Native-rule navigation rebuilds. Castle construction bounds and terrain-clearing overlays. Schematic previews; native artwork and 3D are not implemented.\n\n'
             'Mask folder: '+str(self.pattern_library.directory))
 
     def closeEvent(self,event):

@@ -1,5 +1,10 @@
 # Map editor 0.1
 
+Current implementation is0.3.0. See [the update report](MAP_EDITOR_UPDATE_2026-10-23.md)
+and README for current sizes, tools and navigation support. The older notes
+below describe earlier iterations; their400/500-only, binary-mask and
+unrebuilt-navigation limits are superseded.
+
 For current installation, controls, and hotkeys, use the [README guide](../README.md).
 The notes below document the implementation and earlier UI iterations; some old
 control locations and limits have since changed.

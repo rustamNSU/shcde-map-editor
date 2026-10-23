@@ -6,6 +6,7 @@ import numpy as np
 from semantics import tile_index,tile_xy
 from .buildings import BuildingService,I,H,relocate
 from .services import EntityService
+from .geometry import SUPPORTED_MAP_SIZES
 
 @lru_cache(maxsize=1)
 def tree_catalog():
@@ -33,7 +34,7 @@ class TreeService:
         d=self.document; p=tree_catalog()[str(kind)]
         indices=np.unique(np.asarray(indices,dtype=np.int64))
         if np.any(indices<0) or np.any(indices>=d.geometry.count): raise ValueError('Invalid tree cells')
-        if d.size not in (400,500): raise ValueError('Trees require a 400 or 500 map')
+        if d.size not in SUPPORTED_MAP_SIZES: raise ValueError('Trees require a supported native map size')
         candidates=[tile_xy(int(i)) for i in (self.anchors(indices) if scatter else indices)]
         raw=bytes.fromhex(p['data']); count=0
         unit_tiles={r['tile_id'] for r in EntityService(d).records('units')}

@@ -1,9 +1,14 @@
 # Current-map export preview
 
+Historical implementation note. Native renderer research on 2026-10-23 is in
+[MAP_PREVIEW_RESEARCH_2026-10-23.md](MAP_PREVIEW_RESEARCH_2026-10-23.md).
+The actual native generator is a cell-colour radar renderer, not a screenshot
+or sprite renderer. The schematic implementation below remains in the app.
+
 User requested preview-only implementation. `editor/preview.py` renders a200x200
 schematic square overview from the current document, with surface/resource colors,
 height shading, objects, trees and small player-colored keep icons. No Qt or game
-assets required. This is not the exact native scene/sprite thumbnail renderer.
+assets required. This is not the exact native radar thumbnail renderer.
 Castles on400 maps use the corroborated menu-marker projection;500 uses the map
 geometry projection for thumbnail icons, without modifying500 header markers.
 

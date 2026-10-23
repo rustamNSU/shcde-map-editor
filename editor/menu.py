@@ -10,7 +10,10 @@ def project_keep(size, x, y):
         # Native500 uses three cells per pixel, not 2.5. Matches Ada exactly;
         # native x raster rounding can differ by one pixel on other maps.
         return ((x-y+301)//3, (x+y-495)//3)
-    raise ValueError('Lobby projection supports 400 and 500 maps')
+    from .geometry import SUPPORTED_MAP_SIZES
+    if size not in SUPPORTED_MAP_SIZES:raise ValueError('Unsupported map size')
+    step=max(1,(size+199)//200)
+    return (round(100+(x-y)/step),round(100+(x+y-799)/step))
 
 
 def castle_markers(document):

@@ -1,34 +1,20 @@
 """Vectorized schematic rendering shared by GUI and tests; no Qt dependency."""
 import numpy as np
 from .services import MATERIALS, EntityService
+from .castle_areas import CASTLE_AREA_RADIUS, castle_parts, existing_clear_indices
 
 
 # shcde-stats-rust: src/engine/enums.rs PlayerColor, ui/app.slint swatches.
 PLAYER_COLORS = [tuple(bytes.fromhex(c)) for c in
                  ('df3b30','f28c28','f2d447','3b6eea','1d2430','8e44d7','58c7e8','33a852')]
-# User-reported wall-building extents: entrance plus 70/80 cells on each side.
-CASTLE_AREA_RADIUS = {400:70, 500:80}
 
 # Fixed jet scale: values never depend on the current map's minimum/maximum.
 HEIGHT_COLORS=np.array([np.interp(np.arange(256),[0,32,96,160,224,255],channel)
     for channel in ([0,0,0,255,255,128],[0,0,255,255,0,0],[128,255,255,0,0,0])],dtype=np.uint8).T.copy()
 
 
-def castle_parts(document):
-    """Match the observed keep + doorway + camp layout, excluding stockpiles."""
-    records = EntityService(document).records('buildings')
-    for keep in records:
-        if keep['type'] not in range(40,45) or not 1 <= keep['owner'] <= 8:
-            continue
-        x,y = keep['x'],keep['y']
-        expected = {(x+2,y+7):71, (x+3,y+7):73, (x+4,y+7):72, (x,y+8):55}
-        parts = [keep] + [r for r in records if r['owner']==keep['owner']
-                         and expected.get((r['x'],r['y']))==r['type']]
-        door = next((r for r in parts if r['type']==73), None)
-        yield keep['owner'], parts, (door['x'],door['y']) if door else None
-
-
-def render_rgb(document, layer='surface', objects=True, players=True, area_opacity=25):
+def render_rgb(document, layer='surface', objects=True, players=True, area_opacity=25,
+               *, terrain_rewrite=False):
     d = document
     image = np.full((800, 800, 3), (24, 30, 35), dtype=np.uint8)
     colors = np.full((d.geometry.count, 3), (188, 167, 117), dtype=np.uint8)
@@ -41,11 +27,13 @@ def render_rgb(document, layer='surface', objects=True, players=True, area_opaci
     else:
         surface, logic = d.grid(3037), d.grid(3003)
         for name, (value, color) in MATERIALS.items():
-            if name in ('stone', 'iron', 'marsh'):
+            if name in ('stone', 'iron', 'marsh', 'sea', 'river', 'ford', 'pitch', 'moat', 'rocks'):
                 continue
             colors[surface == value] = tuple(bytes.fromhex(color[1:]))
-        for bit, rgb in [(17, (173,181,189)), (19,(149,103,83)), (29,(92,118,99)),
-                         (20,(69,125,151)), (0,(49,94,125)), (8,(171,157,137))]:
+        for bit, rgb in [(7,(116,113,107)), (17, (173,181,189)), (19,(149,103,83)),
+                         (29,(92,118,99)), (20,(69,125,151)), (21,(113,159,166)),
+                         (0,(49,94,125)), (30,(57,85,102)), (31,(70,55,67)),
+                         (8,(171,157,137))]:
             colors[(logic & (1 << bit)) != 0] = rgb
     colors[~d.geometry.playable] = (31, 40, 44)
     image[d.geometry.y, d.geometry.x] = colors
@@ -74,11 +62,15 @@ def render_rgb(document, layer='surface', objects=True, players=True, area_opaci
         for unit in EntityService(d).records('units'):
             if unit['coordinates_match']:
                 image[unit['y'], unit['x']] = (104,192,205) if unit['hp_candidate'] else (109,101,111)
+    if terrain_rewrite:
+        ids = existing_clear_indices(d)
+        yy,xx = d.geometry.y[ids],d.geometry.x[ids]
+        image[yy,xx] = np.rint(image[yy,xx]*0.5+np.array((255,177,45))*0.5).astype(np.uint8)
     # Solid castle footprints remain visible independently of the area toggle.
     for owner, parts, center in castles:
         for b in parts:
             x,y = b['x'],b['y']
-            side = 7 if b['type'] in set(range(40,45)) | {55} else 1
+            side = b.get('footprint_size',7) if b['type'] in set(range(40,45)) | {55} else 1
             region = np.zeros_like(mask)
             region[max(0,y):min(800,y+side),max(0,x):min(800,x+side)] = True
             image[region & mask] = PLAYER_COLORS[owner-1]

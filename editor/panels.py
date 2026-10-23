@@ -224,7 +224,7 @@ class BrushPanel(QGroupBox):
             row.addWidget(w)
         layout.addLayout(row)
         self.invert=QCheckBox('Invert mask')
-        self.invert.setToolTip('Swap painted and empty cells inside the mask rectangle; the saved mask stays unchanged')
+        self.invert.setToolTip('Binary: swap painted/empty cells. Height: reverse elevation within its range. Saved mask stays unchanged.')
         self.invert.toggled.connect(self.invert_changed)
         layout.addWidget(self.invert)
         self.operations=QHBoxLayout()
@@ -259,6 +259,8 @@ class BrushPanel(QGroupBox):
         self.plus.setEnabled(not mask and state.brush_size<maximum)
         self.dimensions.setText(('%s · %s × %s cells' % (pattern.name,len(pattern.cells[0]),len(pattern.cells))) if pattern else ('Size range: 1–%s cells' % maximum))
         self.dimensions.setWordWrap(True)
+        if pattern and pattern.is_height:
+            self.dimensions.setText(self.dimensions.text()+'\nHeight values %s–%s' % pattern.height_range)
         self.angle.setText('%s°' % state.rotation)
         self.mirror.blockSignals(True)
         self.mirror.setChecked(state.mirror)
@@ -293,13 +295,17 @@ class BrushPanel(QGroupBox):
                 cells=np.asarray(pattern.cells,dtype=np.uint8)
                 rgb=np.zeros((*cells.shape,4),dtype=np.uint8)
                 rgb[cells!=0]=(160,205,183,255)
+                if pattern.is_height:
+                    rgb[cells!=0,:3]=HEIGHT_COLORS[np.asarray(pattern.heights,dtype=np.uint8)[cells!=0]]
                 image=QImage(rgb.data,rgb.shape[1],rgb.shape[0],rgb.strides[0],QImage.Format.Format_RGBA8888).copy()
                 pix=QPixmap.fromImage(image).scaled(42,42,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation)
                 item=QListWidgetItem(QIcon(pix),pattern.name)
                 item.setData(Qt.ItemDataRole.UserRole,str(path))
                 item.setData(Qt.ItemDataRole.UserRole+1,list(pattern.tags))
                 tags.update(pattern.tags)
-                item.setToolTip('%s · %s × %s cells\nTags: %s\n%s' % (pattern.name,cells.shape[1],cells.shape[0],', '.join(pattern.tags) or 'Untagged',path))
+                item.setToolTip('%s · %s × %s cells · %s\nTags: %s\n%s' % (pattern.name,cells.shape[1],cells.shape[0],
+                    'height values %s–%s' % pattern.height_range if pattern.is_height else 'binary coverage',
+                    ', '.join(pattern.tags) or 'Untagged',path))
                 self.gallery.addItem(item)
                 if str(path)==selected:
                     self.gallery.setCurrentItem(item)
@@ -367,9 +373,11 @@ class ViewPanel(QGroupBox):
         self.grid=QCheckBox('Cell grid')
         self.objects=QCheckBox('Objects and units')
         self.players=QCheckBox('Castle areas')
+        self.terrain_rewrite=QCheckBox('Castle terrain clearing')
         for w,key,tip in [(self.grid,'show_grid','Show cell grid when zoomed in'),
                           (self.objects,'show_objects','Show schematic objects and unit records'),
-                          (self.players,'show_castle_areas','Castle wall-building area centered on the entrance: 141 × 141 on 400 maps; 161 × 161 on 500 maps')]:
+                          (self.players,'show_castle_areas','Native construction radius around each keep, selected by map size'),
+                          (self.terrain_rewrite,'show_terrain_rewrite','Amber: terrain the game may repaint around keep/campfire at startup. This overlay does not edit terrain.')]:
             w.setChecked(values.get(key,True) is True)
             w.setToolTip(tip)
             w.toggled.connect(self.changed)

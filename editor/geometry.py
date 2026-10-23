@@ -2,6 +2,31 @@
 import numpy as np
 from semantics import ROW_COUNTS, ROW_STARTS, tile_index, tile_xy
 
+SUPPORTED_MAP_SIZES = (160, 200, 300, 400, 500, 600, 700, 800)
+
+
+def empty_map_logic(map_size):
+    """Native 71390/E8E30 boundary for an otherwise empty, flat map.
+
+    The two-cell outline and outside flood fill reduce to concentric diamond
+    shells. The four mixed 0x30 tip cells are deliberate native writes for
+    sub-800 maps. Full arrays match archived native 160/200/400/500 examples.
+    This constructs new empty-map logic; it must not resize populated maps.
+    """
+    if type(map_size) is not int or map_size not in SUPPORTED_MAP_SIZES:
+        raise ValueError('Unsupported native map size')
+    distance=(np.abs(2*MapGeometry.x-799)+np.abs(2*MapGeometry.y-799))//2
+    radius=map_size//2
+    logic=np.full(MapGeometry.count,0x10,dtype='<u4')
+    logic[distance==399]=0x20  # Inner rim of the complete storage diamond.
+    logic[distance==radius-1]=0x20
+    logic[distance<=radius-2]=0x8000
+    if map_size!=800:
+        margin=(800-map_size)//2
+        tips=(MapGeometry.y==margin)|(MapGeometry.y==799-margin)
+        logic[(distance==radius)&tips]=0x30
+    return logic
+
 
 class MapGeometry:
     count = 320800

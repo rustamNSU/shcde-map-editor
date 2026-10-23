@@ -24,8 +24,12 @@ includes current/target/previous positions, world coordinates, tile IDs and link
 production-building position. Player links relocate with the matching buildings.
 P3 copies P2 templates into unused building slots19..27/unit slot3, gets unique
 global IDs and player/color updates;1190/1191 lord lookup entries and1035 next
-global-ID are updated. Source already has building high-water1047>=27; this is
-an experimental source-specific allocator assumption, not a general allocator.
+global-ID are updated. Historical correction (2026-10-23): section1047 is a
+scenario selection index, not a building high-water mark. The generator's old
+1047>=27 precondition has been removed; it retains direct clean-slot checks.
+See [the DLL registry audit](RUNTIME_FORMAT_AUDIT_2026-10-23.md). The remaining
+generator is an experimental source-specific cloning routine; its clean-slot
+checks do not implement a general allocator.
 
 Local castle grids are translated from source patches after clearing old sites
 with the empty template. Noise and unknown3036 remain at destination coordinates.

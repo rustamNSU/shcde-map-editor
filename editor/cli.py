@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 from . import MapReader, MapWriter, TemplateLibrary, TerrainService, EntityService, MapValidator, PatternLibrary
+from .geometry import SUPPORTED_MAP_SIZES
 
 
 def apply_recipe(document, recipe, directory=Path('.')):
@@ -63,6 +64,13 @@ def apply_recipe(document, recipe, directory=Path('.')):
                     ids = document.geometry.brush(brush['x'], brush['y'], brush['size'], brush.get('shape', 'square'))
             else:
                 pattern = PatternLibrary.load(directory / op['pattern']).transform(op.get('rotation', 0), op.get('mirror', False), op.get('invert',False))
+                if pattern.is_height:
+                    if 'material' in op or 'variation' in op:
+                        raise ValueError('A height mask stamps its stored elevations; omit material and variation')
+                    from .services import HeightService
+                    ids,values=pattern.height_samples(document.geometry,op['x'],op['y'])
+                    results.append(HeightService(document).paint_values(ids,values))
+                    continue
                 ids = pattern.indices(document.geometry, op['x'], op['y'])
             if not isinstance(op.get('experimental_resources', False), bool):
                 raise ValueError('experimental_resources must be a boolean')
@@ -82,7 +90,7 @@ def run(argv):
     edit = sub.add_parser('edit')
     source = edit.add_mutually_exclusive_group(required=True)
     source.add_argument('--input', type=Path)
-    source.add_argument('--size', type=int, choices=[400, 500])
+    source.add_argument('--size', type=int, choices=SUPPORTED_MAP_SIZES)
     edit.add_argument('--recipe', type=Path)
     edit.add_argument('--output', type=Path)
     edit.add_argument('--dry-run', action='store_true')

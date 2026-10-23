@@ -11,7 +11,9 @@ MAPS=Path('C:/Users/rustam/AppData/LocalLow/Firefly Studios/Stronghold Crusader 
 
 def main():
     source=ROOT/'output/buildings-2026-09-20/ref_11_buidlings_400.map'
-    m=MapFile(source.read_bytes())
+    source_bytes=source.read_bytes()
+    assert hashlib.sha256(source_bytes).hexdigest()=='52514e52710005786836b1d1e323f5ff1a3013f05cfe1d6040b6a95d00b58d24'
+    m=MapFile(source_bytes)
     g={sid:np.frombuffer(m.section(sid)['decoded'],dtype=dt) for sid,dt in GRID_TYPES.items()}
     buildings={r['slot']:r for r in entity_report(m,ENTITY_LAYOUTS['buildings'])['records']}
     catalog={}
@@ -30,7 +32,33 @@ def main():
       ('round_tower','Round tower',18,'Fortifications'),
       ('small_gate','Small gate',76,'Fortifications'),('large_gate','Large gate',80,'Fortifications'),
       ('small_gate_bridge','Small gate + drawbridge',77,'Fortifications'),
-      ('large_gate_bridge','Large gate + drawbridge',80,'Fortifications')]
+      ('large_gate_bridge','Large gate + drawbridge',80,'Fortifications'),
+      ('stockpile','Stockpile (four sections)',24,'Storage'),
+      ('pitch_rig','Pitch rig',33,'Resources'),('market','Market',34,'Town'),
+      ('small_church','Small church',36,'Religion'),('church','Church',37,'Religion'),
+      ('cathedral','Cathedral',38,'Religion'),('apothecary','Apothecary',39,'Town'),
+      ('well','Well',40,'Town'),('water_pot','Water pot',41,'Town'),
+      ('stone_barracks','Stone barracks + parade grounds',1,'Military'),
+      ('mercenary_post','Mercenary post + parade grounds',5,'Military'),
+      ('bedouin_stockade','Bedouin stockade + parade grounds',9,'Military'),
+      ('engineers_guild','Engineers guild + parade ground',69,'Military'),
+      ('stables','Stables',71,'Military'),
+      ('tunnellers_guild','Tunnellers guild + parade ground',72,'Military'),
+      ('oil_smelter','Oil smelter + parade ground',74,'Military'),
+      ('dog_cage','War dog cage',79,'Fortifications'),('killing_pit','Killing pit',83,'Fortifications'),
+      ('gallows','Gallows',42,'Bad things'),('cesspit','Cesspit',43,'Bad things'),
+      ('stocks','Stocks',44,'Bad things'),('burning_stake','Burning stake',45,'Bad things'),
+      ('dungeon','Dungeon',46,'Bad things'),('stretching_rack','Stretching rack',47,'Bad things'),
+      ('gibbet','Gibbet',48,'Bad things'),('chopping_block','Chopping block',49,'Bad things'),
+      ('dunking_stool','Dunking stool',50,'Bad things'),
+      ('maypole','Maypole',51,'Good things'),('garden_3_a','Garden (3 × 3, A)',52,'Good things'),
+      ('dancing_bear','Dancing bear',53,'Good things'),('garden_2','Garden (2 × 2)',54,'Good things'),
+      ('garden_4','Garden (4 × 4)',55,'Good things'),('garden_3_b','Garden (3 × 3, B)',56,'Good things'),
+      ('statue','Statue',57,'Good things'),('shrine','Shrine',58,'Good things')]
+    groups={'quarry':[29,30], 'small_gate_bridge':[77,78], 'large_gate_bridge':[80,81],
+            'stockpile':list(range(24,28)), 'stone_barracks':list(range(1,5)),
+            'mercenary_post':list(range(5,9)), 'bedouin_stockade':list(range(9,13)),
+            'engineers_guild':[69,70], 'tunnellers_guild':[72,73], 'oil_smelter':[74,75]}
     def fields(raw,kind):
         if kind=='buildings':
             pairs=[(0xe8,8),(0xee,1),(0xfe,1),(0x260,1)]
@@ -57,8 +85,8 @@ def main():
         trees=sorted(set(int(v) for v in g[3004][list(ids)] if v))
         units=[]
         if key=='castle':
-            # Include approach, doorway, camp and the gaps between four stockpile parts.
-            ids.update(tile_index(x+dx,y+dy) for dy in range(15) for dx in range(12))
+            # Only native structure references belong to this prefab. Empty
+            # cells inside the enclosing rectangle remain usable by other tools.
             units=[r['slot'] for r in entity_report(m,ENTITY_LAYOUTS['units'])['records']
                    if r['type']==55 and abs(r['x']-x)<15 and abs(r['y']-y)<18]
             assert len(units)==1
@@ -86,8 +114,7 @@ def main():
              width=max(c[0] for c in cells)+1,height=max(c[1] for c in cells)+1,
              records=records,grids={str(sid):a[ids].tolist() for sid,a in g.items() if sid not in (3008,)})
     for key,label,slot,category in choices:
-        slots=[29,30] if key=='quarry' else [77,78] if key=='small_gate_bridge' else [80,81] if key=='large_gate_bridge' else [slot]
-        prefab(key,label,slot,category,slots)
+        prefab(key,label,slot,category,groups.get(key,[slot]))
     # Castle records must come from the isolated native reference, not a lord
     # that has been running alongside dozens of other entities in ref_11.
     castle_source=ROOT/'output/castle-audit-2026-09-20/ref_12_castle.map'

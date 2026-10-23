@@ -1,4 +1,89 @@
-# Память исследования — актуально 2026-09-19
+# Память исследования — актуально 2026-10-23
+
+## 2026-10-23: stored gold versus multiplayer starting gold
+
+See docs/PLAYER_GOLD_STARTUP_2026-10-23.md and native supplement.2022 contains
+9records583C bytes, currentGoldInt32+50C; incomingGold+4A8. Ordinaryfresh
+MP/skirmish94350 clears saved goods incl50C forP1..8;D1170 seedsincoming4A8
+from goldtable2D4DA0 with goods/fairness/humanAI. Custommap currentGold edits
+do not survive normalMP startup. Early bMultiplayerSave arg2 branch bypasses
+clear; directDLL_LoadSaveGame853F0 uses containerload. Scenario startinggoods
+and specialgold use separate config; no ordinaryMPperplayeroverride proven.
+Research only. User explicitly accepted existing preview; no preview/app/EXE
+changes requested or made.
+
+## 2026-10-23: embedded map-thumbnail native chain
+
+See docs/MAP_PREVIEW_RESEARCH_2026-10-23.md plus managed/native supplements.
+Not PNG: DCL40512 bytes =512-byteRGB555 palette+40000uint8indices. Save52B0
+calls nativeF4DF0; liveSaveRadar84290 uses same producer; decoder87B80 expands
+palette viaF6FB0. Managed save passes path/metadata, no Unity screenshot.
+Workshop Upload.png is a later derivative of saved thumbnail. Native rendering
+uses per-cell flag/variation colours and derived LuminescenceLayer4EC82B0,
+not terrain sprite assets. First-seen RGB555 palette order; unseen colour after
+256 entries falls back0; unused tail copied from uninitialized stack.
+Current exporter remains a schematic renderer with invented gradients/icons
+and MEDIANCUT. Native-vs-current Ada500 comparison differs27556/40000RGBpixels,
+paletteindices56vs25. Input SHA checked unchanged; evidence output/preview-
+comparison-2026-10-23; reproducible research/compare_map_previews.py.
+No app/EXE/game/original-map changes. Need a validated offline native port for
+matching appearance; retaining stale source preview is not a correct edit fix.
+
+## 2026-10-23: editor0.3.0 implementation
+
+See docs/MAP_EDITOR_UPDATE_2026-10-23.md. Native navigation3030/3021 now rebuilt
+inside undoable document transactions through our offline C++ port. Original
+D86F0 machine instructions match1600 mixed synthetic cases; nativeE49D0 full
+320800-cell scan, DE6A0 400cases and D8CE0 80gatecases match. Nine archived
+edge arrays match exactly. Stored component grids on sea/river/high plateau
+can be stale: originalE49D0 verification supports the regenerated seed rules.
+All eight native map presets implemented from audited empty bytes. Sparse
+castle cells117;69 prefabs; native build radius table and potential castle
+clearing overlay, valued image/height masks, hill painting and water tools.
+133 source tests passed; portable EXE GUI smoke and all8 native-size CLI export/
+readback checks passed with isolated output/settings. Detailed cliff/shore graphics remain unported; the
+numeric height brush is an absolute0–255 tool, not the native gradual/clamped
+brush. Original game files/maps remain unchanged.
+
+## 2026-10-23: direct DLL section registry and editor audit
+
+Read docs/RUNTIME_FORMAT_AUDIT_2026-10-23.md before the next editor update.
+Pinned DLL SHA256 fbcb93195fc7efca9bdac5204852efdd76f9818f59a6711750d77c9cef2831e2.
+Native table RVA336b20:212 descriptors,24 bytes each,175 enabled by default.
+All29 archived references plus9 DE maps/snapshots match IDs/sizes/compression and
+roundtrip byte-exactly; known opaque1190 blocks remain preserved. Machine-readable
+snapshot: research/native_section_registry_2026-10-23.json. Reproduce with
+python -m research.audit_native_sections using .venv; no game process access.
+
+New bindings:1171=10000*1000-byte unit packed routes (low nibble first,0..7=N..NW);
+3030=direction edge masks,3021=components,3036=MacroLayer,3006=ShowHiLayer,
+3020=DamageLayer,3026=projectile occupancy,1040=full deterministic RNG state.
+2016=4500*1672 tribe records;1016 overlaps its first1500.2025=6000*232 projectile
+records;1038=4000*32 auxiliary vegetation descriptors. Preserve uncertainty on
+record headers/lifecycles.3009 points at WallGfxLayer but its persisted byte length
+disagrees with the SDK's32-bit declaration; do not auto-convert its schema.
+
+1047 is native scenario-selection state (loader87c40 writes argument-1), NOT a
+building allocation counter. Removed that old guard from make_three_castle_grid;
+retained direct zero-slot checks; did not run the generator.1035's next-global-ID
+meaning is now backed by native assign-then-increment instructions.
+
+Research decoder fix: vegetation file+78 is signed Int16; added felled_state+76.
+Negative resources must not be reported as65535 positive loads. Regression added.
+Saved path cross-check:737 state2 plans in Leto and20 in orientation save all pass
+cursor/length and direction-range checks. Do not treat cached plans/active_count
+as living/moving-unit counts. Runtime-to-file displacements are record-specific:
+unit+4, vegetation-12, established building fields0; new tribe+2/projectile-20
+bindings need broader lifecycle validation before editing.
+
+Initial test failures were missing examples copies. Restored five hash-pinned
+copies from existing originals using research/prepare_test_examples.py; exclusive
+create/refuse conflicts; original hashes verified; examples ignored by Git.
+97 tests pass. No GUI feature/EXE rebuild, live state edits, source-map/game-file
+changes or game load. Main next implementation: derived terrain/navigation
+consistency + diagnostics; then richer read-only section/entity/path inspection.
+
+The earlier GUI-only map-creation task in AGENTS is historical, not this request.
 
 ## 2026-09-21: castle orientations
 

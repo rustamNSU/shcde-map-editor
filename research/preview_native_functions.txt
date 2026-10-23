@@ -1,0 +1,6 @@
+native_thumbnail_producer:f4df0:f4df0-f4e91,f4e91-f58c0,f58c0-f5950,f5950-f59d7,f59d7-f5a37
+native_minimap_candidate:f5a40:f5a40-f6e1f
+native_thumbnail_container:52b0:52b0-5ad8
+export_GetSaveRadar:84290:84290-84321
+export_UnpackRadarToARGB:87b80:87b80-87c0c
+native_expand_thumbnail:f6fb0:f6fb0-f6ff0,f6ff0-f7170,f7170-f7203
